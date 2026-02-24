@@ -1,6 +1,8 @@
 import sys
 import os
-import google.generativeai as genai
+import pyautogui
+import time
+from groq import Groq
 import speech_recognition as sr
 import pyttsx3
 import webbrowser, docx
@@ -31,12 +33,13 @@ class ChatWindow(QMainWindow):
         self.last_response = ""
         self.voice_gender = "male"
         self.manual_path = "commands_manual.pdf"
+        #changes i have made to the code
+        self.open_apps = {}
+        self.current_app = None
 
     def init_ui(self):
-        load_dotenv()
-        google_api_key = os.getenv("GOOGLE_API_KEY")
-        genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
-        self.model = genai.GenerativeModel('gemini-pro')
+        # groq_api_key = "your_api_key"
+        self.client = Groq(api_key=groq_api_key)
 
         self.setWindowTitle("Cypher Assistant")  # Set window title
         self.setGeometry(100, 100, 600, 400)
@@ -176,6 +179,7 @@ class ChatWindow(QMainWindow):
                 self.update_chat_history("No document opened. Please open a Word document first.\n")
             return
         
+        
         if self.listen_for_text:
             if query:  # Only proceed if there's actual text
                 if self.doc is not None:
@@ -227,13 +231,17 @@ class ChatWindow(QMainWindow):
                 subprocess.Popen(["calc.exe"])
                 self.update_chat_history(f"Opening {app_name}")
             elif app_name == "whatsapp":
-                response = open_application("whatsapp")
-                self.update_chat_history(response)
+                os.startfile("whatsapp:")
+                self.update_chat_history("Opening WhatsApp")
                 return
             elif app_name == "spotify":
-                response = open_application("spotify")
-                self.update_chat_history(response)
+                os.startfile("spotify:")
+                self.update_chat_history("Opening Spotify")
                 return
+            # elif app_name == "zoom":
+            #     os.startfile("Zoom.exe")
+            #     self.update_chat_history("Opening zoom")
+            #     return
             elif app_name == "excel":
                 os.startfile("excel.exe")
                 self.update_chat_history(f"Opening {app_name}")
@@ -245,6 +253,52 @@ class ChatWindow(QMainWindow):
             else:
                 self.update_chat_history("Unsupported application")
             return
+        
+        if query.startswith("send whatsapp message"):
+            try:
+                # Example: send whatsapp message to rahul hello how are you
+                parts = query.replace("send whatsapp message to", "").strip().split(" ", 1)
+
+                if len(parts) < 2:
+                    self.update_chat_history("Please say contact name and message")
+                    return
+
+                contact_name = parts[0]
+                message = parts[1]
+
+                # Open WhatsApp
+                os.startfile("whatsapp:")
+                self.update_chat_history("Opening WhatsApp...")
+                time.sleep(6)
+
+                # Open search using keyboard shortcut
+                pyautogui.hotkey("ctrl", "f")
+                time.sleep(1)
+
+                # Type contact name
+                pyautogui.write(contact_name)
+                time.sleep(2)
+
+                pyautogui.press("enter")
+                time.sleep(1)
+
+                # Type message
+                pyautogui.write(message)
+                time.sleep(1)
+
+                pyautogui.press("enter")
+
+                self.update_chat_history(f"Message sent to {contact_name}")
+                self.read_out_loud("Message sent successfully")
+
+            except Exception as e:
+                self.update_chat_history(f"Error: {e}")
+                self.read_out_loud("Failed to send message")
+
+            return
+        
+ 
+        
         
         if query.startswith("close"):
             close_app_name = query[len("close"):].strip().lower()
@@ -277,8 +331,11 @@ class ChatWindow(QMainWindow):
                 subprocess.Popen(["taskkill", "/F", "/IM", "spotify"], shell=True)
                 self.update_chat_history(f"closing {close_app_name}")
                 return
+            elif close_app_name == "word document":
+                subprocess.Popen(["taskkill", "/F", "/IM", "winword.exe"], shell=True)
+                self.update_chat_history(f"closing {close_app_name}")
+                return
         
-
         if query.startswith("youtube search"):
             search_query = query[len("youtube search"):].strip()
             self.update_chat_history(f"Searching YouTube for: {search_query}")
@@ -303,8 +360,20 @@ class ChatWindow(QMainWindow):
             self.read_out_loud(f"Today is {current_day}.")
             return
 
-        response = self.model.generate_content(query)
-        response_text = response.text.replace('*', '')  
+        try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are Cypher, a helpful desktop AI assistant."},
+                    {"role": "user", "content": query}
+                ],
+                 model="llama-3.1-8b-instant"
+            )
+
+            response_text = chat_completion.choices[0].message.content
+
+        except Exception as e:
+            response_text = f"Error: {str(e)}"
+
         self.update_chat_history(f"Assistant: {response_text}\n")
         self.read_out_loud(response_text)
         self.last_response = response_text
